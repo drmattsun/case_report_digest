@@ -14,6 +14,25 @@ import requests
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
+# 診療科カテゴリ ⇔ PubMed MeSH検索語 の対応表。
+# チェックボックスで選んだ項目をOR条件で組み合わせて絞り込む。
+SPECIALTY_CATEGORIES: dict[str, str] = {
+    "消化器": "digestive system diseases[MeSH Terms]",
+    "膠原病・リウマチ": "rheumatic diseases[MeSH Terms]",
+    "循環器": "cardiovascular diseases[MeSH Terms]",
+    "呼吸器": "respiratory tract diseases[MeSH Terms]",
+    "腎臓": "kidney diseases[MeSH Terms]",
+    "内分泌・代謝": "endocrine system diseases[MeSH Terms]",
+    "血液": "hematologic diseases[MeSH Terms]",
+    "感染症": "communicable diseases[MeSH Terms]",
+    "神経": "nervous system diseases[MeSH Terms]",
+    "腫瘍": "neoplasms[MeSH Terms]",
+    "皮膚": "skin diseases[MeSH Terms]",
+    "精神": "mental disorders[MeSH Terms]",
+    "小児": "pediatrics[MeSH Terms]",
+    "産婦人科": "genital diseases, female[MeSH Terms]",
+}
+
 
 @dataclass
 class CaseReport:
@@ -45,15 +64,29 @@ def search_case_report_pmids(
     retmax: int = 20,
     api_key: Optional[str] = None,
     extra_term: Optional[str] = None,
+    humans_only: bool = True,
+    categories: Optional[list[str]] = None,
 ) -> list[str]:
     """
     直近 `days` 日以内に発行された、Publication Type = "Case Reports" の
     論文のPMID一覧を新しい順に取得する。
 
-    extra_term: 診療科などで絞り込みたい場合に追加するPubMed検索語
-                (例: "cardiology[MeSH Terms]")。医学全般の場合はNoneでよい。
+    extra_term: 自由記述で絞り込みたい場合に追加するPubMed検索語
+                (例: "cardiology[MeSH Terms]")。
+    humans_only: Trueの場合、動物実験などを除き人間の症例のみに絞り込む。
+    categories: SPECIALTY_CATEGORIES のキー(例: ["消化器", "膠原病・リウマチ"])。
+                複数指定するとOR条件で絞り込む。空リスト/Noneなら絞り込みなし(全科)。
     """
     term = 'Case Reports[Publication Type] AND English[Language]'
+
+    if humans_only:
+        term += " AND humans[MeSH Terms]"
+
+    if categories:
+        mesh_terms = [SPECIALTY_CATEGORIES[c] for c in categories if c in SPECIALTY_CATEGORIES]
+        if mesh_terms:
+            term += " AND (" + " OR ".join(mesh_terms) + ")"
+
     if extra_term:
         term += f" AND {extra_term}"
 
@@ -153,7 +186,16 @@ def get_latest_case_reports(
     retmax: int = 20,
     api_key: Optional[str] = None,
     extra_term: Optional[str] = None,
+    humans_only: bool = True,
+    categories: Optional[list[str]] = None,
 ) -> list[CaseReport]:
     """検索から詳細取得までをまとめて実行するショートカット関数。"""
-    pmids = search_case_report_pmids(days=days, retmax=retmax, api_key=api_key, extra_term=extra_term)
+    pmids = search_case_report_pmids(
+        days=days,
+        retmax=retmax,
+        api_key=api_key,
+        extra_term=extra_term,
+        humans_only=humans_only,
+        categories=categories,
+    )
     return fetch_case_reports(pmids, api_key=api_key)
